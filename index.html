@@ -2,9 +2,7 @@
 <html lang="zh-Hant"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>批次自動調色</title>
-<meta name="description" content="在瀏覽器中批次分析、調整並下載照片，不會上傳照片。">
-<link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon.svg">
 <meta name="theme-color" content="#14161a">
 <style>
 :root{--bg:#14161a;--pn:#1d2026;--bd:#2c3038;--tx:#e8eaed;--mu:#8b919b;--ac:#4aa3ff}
@@ -283,6 +281,5 @@ $('#file').onchange=e=>{add([...e.target.files]);e.target.value=''};
 ['dragover','dragenter'].forEach(ev=>dr.addEventListener(ev,e=>{e.preventDefault();dr.classList.add('on')}));
 ['dragleave','drop'].forEach(ev=>dr.addEventListener(ev,e=>{e.preventDefault();dr.classList.remove('on')}));
 dr.addEventListener('drop',e=>add([...e.dataTransfer.files]));
-if('serviceWorker' in navigator&&location.protocol.startsWith('http'))
- navigator.serviceWorker.register('./sw.js').catch(e=>console.error('Service worker registration failed:',e));
+if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script></body></html>

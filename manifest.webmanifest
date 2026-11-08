@@ -1,1 +1,19 @@
-{"name":"批次自動調色","short_name":"自動調色","start_url":"./index.html","scope":"./","display":"standalone","background_color":"#14161a","theme_color":"#14161a","icons":[{"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]}
+{
+  "name": "批次自動調色",
+  "short_name": "自動調色",
+  "description": "在瀏覽器本機自動調色，不上傳。",
+  "lang": "zh-Hant",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#14161a",
+  "theme_color": "#14161a",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

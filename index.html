@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>批次自動調色</title>
+<meta name="description" content="在瀏覽器中批次分析、調整並下載照片，不會上傳照片。">
+<link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="theme-color" content="#14161a">
+<style>
+:root{--bg:#14161a;--pn:#1d2026;--bd:#2c3038;--tx:#e8eaed;--mu:#8b919b;--ac:#4aa3ff}
+@media(prefers-color-scheme:light){:root{--bg:#f3f4f6;--pn:#fff;--bd:#d9dce1;--tx:#1b1d21;--mu:#6b717b}}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:var(--bg);color:var(--tx);font:14px/1.5 system-ui,"Noto Sans TC",sans-serif;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+header{padding:12px 16px;display:flex;gap:10px;align-items:center;border-bottom:1px solid var(--bd)}
+h1{font-size:17px;margin:0;flex:1}
+main{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:12px;padding:12px;max-width:1400px;margin:auto}
+@media(max-width:860px){main{grid-template-columns:1fr}}
+.pn{background:var(--pn);border:1px solid var(--bd);border-radius:12px;padding:12px}
+button,.btn{background:var(--ac);color:#fff;border:0;border-radius:8px;padding:8px 14px;font:inherit;cursor:pointer}
+button.g{background:transparent;color:var(--tx);border:1px solid var(--bd)}button:disabled{opacity:.4}
+#drop{border:2px dashed var(--bd);border-radius:12px;padding:22px;text-align:center;color:var(--mu);cursor:pointer}
+#drop.on{border-color:var(--ac);color:var(--ac)}
+#stage{position:relative;margin-top:12px;background:#000;border-radius:10px;min-height:120px;display:flex;justify-content:center;overflow:hidden}
+#cv{max-width:100%;max-height:60vh;display:block}
+#hold{position:absolute;right:8px;bottom:8px;background:#000a;color:#fff;touch-action:none;user-select:none}
+#list{display:flex;gap:8px;overflow-x:auto;margin-top:12px;padding-bottom:4px}
+.th{flex:none;width:84px;height:64px;border-radius:8px;border:2px solid transparent;object-fit:cover;cursor:pointer}
+.th.s{border-color:var(--ac)}
+.row{display:grid;grid-template-columns:62px 1fr 44px;align-items:center;gap:8px;margin:5px 0}
+.row output{text-align:right;color:var(--mu);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.chip{padding:3px 10px;border:1px solid var(--bd);border-radius:99px;cursor:pointer;color:var(--mu);user-select:none}
+.chip.on{background:var(--ac);border-color:var(--ac);color:#fff}
+h3{margin:12px 0 4px;font-size:13px;color:var(--mu);font-weight:600}
+select,input[type=number]{background:var(--bg);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:4px}
+#bar{height:6px;background:var(--bd);border-radius:3px;overflow:hidden;margin-top:8px;display:none}#bar i{display:block;height:100%;width:0;background:var(--ac)}
+small{color:var(--mu)}
+</style></head><body>
+<header><h1>📷 批次自動調色</h1><button class="g" id="clr">清空</button></header>
+<main>
+<section class="pn">
+ <div id="drop">點擊或拖曳多張照片到這裡（JPG / PNG / WebP / HEIC 視瀏覽器支援）</div>
+ <input id="file" type="file" accept="image/*" multiple hidden>
+ <div id="stage"><canvas id="cv" width="1" height="1"></canvas><button id="hold" class="g" hidden>按住看原圖</button></div>
+ <div id="list"></div>
+</section>
+<aside class="pn">
+ <h3>自動強度</h3>
+ <div class="row"><span>強度</span><input id="str" type="range" min="0" max="150" value="100"><output id="strv">100%</output></div>
+ <h3>啟用的調整項目</h3><div class="chips" id="chips"></div>
+ <h3>目前這張（可微調）</h3><div id="sl"><small>尚未選擇照片</small></div>
+ <button class="g" id="redo" disabled style="margin-top:6px">重新自動</button>
+ <h3>輸出</h3>
+ <div class="row"><span>格式</span><select id="fmt"><option value="image/jpeg">JPEG</option><option value="image/webp">WebP</option><option value="image/png">PNG</option></select><span></span></div>
+ <div class="row"><span>品質</span><input id="q" type="range" min="50" max="100" value="92"><output id="qv">92</output></div>
+ <div class="row"><span>長邊</span><input id="mx" type="number" min="0" step="100" value="0"><small>px, 0=原尺寸</small></div>
+ <button id="go" disabled style="width:100%;margin-top:10px">處理全部並下載</button>
+ <button class="g" id="one" disabled style="width:100%;margin-top:6px">只下載這張</button>
+ <div id="bar"><i></i></div><small id="msg"></small>
+</aside>
+</main>
+<script>
+const $=s=>document.querySelector(s),cl=(v,a,b)=>Math.max(a,Math.min(b,v));
+const K=[['exposure','曝光',-3,3,.01],['contrast','對比',-100,100,1],['highlights','亮部',-100,100,1],['shadows','陰影',-100,100,1],['whites','白色',-100,100,1],['blacks','黑色',-100,100,1],['vibrance','鮮豔度',-100,100,1],['saturation','飽和度',-100,100,1]];
+const dec=i=>{const v=i/255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4};
+const enc=v=>{v=cl(v,0,1);return 255*(v<=.0031308?v*12.92:1.055*v**(1/2.4)-.055)};
+const DEC=Float32Array.from({length:256},(_,i)=>dec(i));
+const sm=(a,b,x)=>{x=cl((x-a)/(b-a),0,1);return x*x*(3-2*x)};
+let items=[],sel=-1,strength=1,en=Object.fromEntries(K.map(k=>[k[0],true])),pv=null;
+
+/* ---------- 自動分析 ----------
+   以 121 組「原圖 + Lightroom 成品」（其中 45 組有實際參數、其餘用渲染器反推）迴歸。
+   曝光、陰影、黑色、鮮豔度、白色用 1–3 個影像特徵預測；亮部、飽和度無法預測，取樣本中位數；對比固定 6。
+   交叉驗證下，成品與 Lightroom 的差距約為「不調整」的七成。 */
+function pctl(a,q){const p=(a.length-1)*q/100,lo=Math.floor(p),hi=Math.ceil(p);return a[lo]+(a[hi]-a[lo])*(p-lo)}
+function analyze(img){
+ const d=img.data,W=img.width,H=img.height,n=W*H,Lg=new Float32Array(n),Yl=new Float32Array(n);
+ let sy=0,c94=0,c97=0;
+ for(let j=0;j<n;j++){const i=j*4,r=d[i],g=d[i+1],b=d[i+2],mx=Math.max(r,g,b)/255;
+  Lg[j]=(.2126*r+.7152*g+.0722*b)/255;Yl[j]=.2126*DEC[r]+.7152*DEC[g]+.0722*DEC[b];sy+=Yl[j];
+  if(mx>.94)c94++;if(mx>.97)c97++;}
+ let gr=0;
+ for(let y=0;y<H;y++)for(let x=0;x<W-1;x++)gr+=Math.abs(Lg[y*W+x+1]-Lg[y*W+x]);
+ gr/=H*(W-1);let gy=0;
+ for(let y=0;y<H-1;y++)for(let x=0;x<W;x++)gy+=Math.abs(Lg[(y+1)*W+x]-Lg[y*W+x]);
+ gr+=gy/((H-1)*W);
+ /* 邊緣保留的明暗底層（128px），統計暗區面積 */
+ const s=128/Math.max(W,H),lw=Math.max(1,Math.round(W*s)),lh=Math.max(1,Math.round(H*s)),acc=new Float32Array(lw*lh),cnt=new Uint32Array(lw*lh);
+ for(let y=0;y<H;y++){const ly=Math.min(lh-1,Math.floor(y*lh/H));for(let x=0;x<W;x++){const j=ly*lw+Math.min(lw-1,Math.floor(x*lw/W));acc[j]+=Lg[y*W+x];cnt[j]++}}
+ for(let j=0;j<acc.length;j++)acc[j]/=Math.max(1,cnt[j]);
+ const q=guided(acc,lw,lh,6,.0009);let b8=0,b18=0;
+ for(let y=0;y<H;y++){const fy=(y+.5)*lh/H-.5,y0=Math.max(0,Math.floor(fy)),y1=Math.min(lh-1,y0+1),wy=Math.min(1,Math.max(0,fy-y0));
+  for(let x=0;x<W;x++){const fx=(x+.5)*lw/W-.5,x0=Math.max(0,Math.floor(fx)),x1=Math.min(lw-1,x0+1),wx=Math.min(1,Math.max(0,fx-x0));
+   const v=(q[y0*lw+x0]*(1-wx)+q[y0*lw+x1]*wx)*(1-wy)+(q[y1*lw+x0]*(1-wx)+q[y1*lw+x1]*wx)*wy;
+   if(v<.08)b8++;if(v<.18)b18++;}}
+ const sL=Float32Array.from(Lg).sort(),sY=Float32Array.from(Yl).sort();
+ const lmean=Math.log2(Math.max(sy/n,1e-4)),lp25=Math.log2(Math.max(pctl(sY,25),1e-4)),lp10=Math.log2(Math.max(pctl(sY,10),1e-4)),
+  clipmx94=c94/n,clipmx97=c97/n,grad=gr,bd8=b8/n,bd18=b18/n,dr=pctl(sL,95)-pctl(sL,25),g1=pctl(sL,1);
+ return{
+  exposure:+cl(-0.20721*lmean+-0.05198*lp25+-0.91246*clipmx94+-0.47297,-1.5,1.5).toFixed(2),
+  contrast:6,
+  highlights:Math.round(-6.76448),
+  shadows:Math.round(cl(-2.68956*lp25+69.44746*clipmx97+-131.33309*grad+25.51896,0,70)),
+  whites:Math.round(cl(-13.00939*bd8+7.16733,-40,50)),
+  blacks:Math.round(cl(-1.54592*lp10+14.97739*dr+7.23886*bd18+-32.15865,-50,10)),
+  vibrance:Math.round(cl(6.53433*g1+14.23082,0,35)),
+  saturation:Math.round(1.18056)};
+}
+const scaled=a=>Object.fromEntries(K.map(([k,,lo,hi])=>[k,k=='exposure'?+cl(a[k]*strength,lo,hi).toFixed(2):Math.round(cl(a[k]*strength,lo,hi))]));
+
+/* ---------- 套用調整（就地修改 ImageData） ----------
+   在線性光中處理。亮部/陰影是局部調整：先用低解析度 guided filter 取得保邊的明暗底層，
+   只移動底層亮度並保留細節，再對像素本身做高光壓縮。係數同樣由 Lightroom 樣本校正。 */
+/* 由 Lightroom 樣本學到的固定修正：各亮度區的亮度偏移與色彩增益 */
+const POST={cen:[4, 12, 24, 40, 56, 80, 112, 144, 176, 208, 240],d:[0.953, 0.466, 0.653, 1.354, 1.334, 2.717, 3.975, 1.111, -2.651, -2.049, -3.173],g:[1.189, 1.331, 1.324, 1.172, 1.082, 1.026, 0.979, 0.911, 0.849, 0.813, 0.803]};
+function interp1(x,xs,ys){if(x<=xs[0])return ys[0];for(let i=1;i<xs.length;i++)if(x<=xs[i]){const t=(x-xs[i-1])/(xs[i]-xs[i-1]);return ys[i-1]+(ys[i]-ys[i-1])*t}return ys[ys.length-1]}
+const CF={kP:1.2,p0:.683,kS:1.681,s1:.445,kH:.378,h0:.105,kDx:.01,kE:.926,kWh:1.833,kBl:1.08,kC:.508,kV:1.99,kSat:1};
+const ENC=Float32Array.from({length:16385},(_,i)=>enc(i/16384)),encF=v=>ENC[v<=0?0:v>=1?16384:(v*16384+.5)|0];
+function boxF(a,w,h,r){
+ const t=new Float32Array(w*h),o=new Float32Array(w*h),c=new Float64Array(Math.max(w,h)+1);
+ for(let y=0;y<h;y++){c[0]=0;for(let x=0;x<w;x++)c[x+1]=c[x]+a[y*w+x];
+  for(let x=0;x<w;x++){const lo=Math.max(x-r,0),hi=Math.min(x+r+1,w);t[y*w+x]=(c[hi]-c[lo])/(hi-lo)}}
+ for(let x=0;x<w;x++){c[0]=0;for(let y=0;y<h;y++)c[y+1]=c[y]+t[y*w+x];
+  for(let y=0;y<h;y++){const lo=Math.max(y-r,0),hi=Math.min(y+r+1,h);o[y*w+x]=(c[hi]-c[lo])/(hi-lo)}}
+ return o;
+}
+function guided(I,w,h,r,eps){
+ const n=w*h,II=new Float32Array(n);for(let i=0;i<n;i++)II[i]=I[i]*I[i];
+ const m=boxF(I,w,h,r),v=boxF(II,w,h,r),A=new Float32Array(n),B=new Float32Array(n);
+ for(let i=0;i<n;i++){const vv=v[i]-m[i]*m[i];A[i]=vv/(vv+eps);B[i]=m[i]*(1-A[i])}
+ const ma=boxF(A,w,h,r),mb=boxF(B,w,h,r),q=new Float32Array(n);
+ for(let i=0;i<n;i++)q[i]=ma[i]*I[i]+mb[i];
+ return q;
+}
+function baseMap(d,W,H,ge){
+ const s=256/Math.max(W,H),lw=Math.max(1,Math.round(W*s)),lh=Math.max(1,Math.round(H*s)),
+ acc=new Float32Array(lw*lh),cnt=new Uint32Array(lw*lh);
+ for(let y=0;y<H;y++){const ly=Math.min(lh-1,Math.floor(y*lh/H));
+  for(let x=0;x<W;x++){const j=ly*lw+Math.min(lw-1,Math.floor(x*lw/W)),i=(y*W+x)*4;
+   const Y=(.2126*DEC[d[i]]+.7152*DEC[d[i+1]]+.0722*DEC[d[i+2]])*ge;
+   acc[j]+=Math.pow(Math.max(Y,1e-5),1/2.2);cnt[j]++}}
+ for(let j=0;j<acc.length;j++)acc[j]/=Math.max(1,cnt[j]);
+ return{lw,lh,q:guided(acc,lw,lh,12,.0009)};
+}
+function adjust(img,P){
+ const p=Object.fromEntries(K.map(([k])=>[k,en[k]?P[k]:0])),d=img.data,W=img.width,H=img.height;
+ const ge=2**(p.exposure*CF.kE);
+ const bk=-p.blacks/100*.12*CF.kBl,wh=1-p.whites/100*.12*CF.kWh,T=new Float32Array(256);
+ for(let i=0;i<256;i++){
+  let x=cl((i/255-bk)/(wh-bk),0,1);
+  x+=p.contrast/100*CF.kC*(sm(0,1,x)-x)*1.5;
+  T[i]=cl(x,0,1)*255;}
+ const S=p.shadows,Hh=p.highlights,vib=p.vibrance/100,sat=p.saturation/100,local=S||Hh,
+ dx=1+CF.kDx*(Math.max(0,-Hh)+Math.max(0,S)),
+ tone=p.whites||p.blacks||p.contrast,col=vib||sat,
+ bm=local?baseMap(d,W,H,ge):null;
+ for(let y=0;y<H;y++){
+  let y0,y1,wy;
+  if(bm){const fy=(y+.5)*bm.lh/H-.5;y0=Math.max(0,Math.floor(fy));y1=Math.min(bm.lh-1,y0+1);wy=Math.min(1,Math.max(0,fy-y0))}
+  for(let x=0;x<W;x++){
+   const i=(y*W+x)*4;
+   let lr=DEC[d[i]]*ge,lg=DEC[d[i+1]]*ge,lb=DEC[d[i+2]]*ge;
+   if(bm){
+    const Y=Math.max(.2126*lr+.7152*lg+.0722*lb,1e-6),
+    fx=(x+.5)*bm.lw/W-.5,x0=Math.max(0,Math.floor(fx)),x1=Math.min(bm.lw-1,x0+1),wx=Math.min(1,Math.max(0,fx-x0)),q=bm.q,lw=bm.lw,
+    bu=Math.max((q[y0*lw+x0]*(1-wx)+q[y0*lw+x1]*wx)*(1-wy)+(q[y1*lw+x0]*(1-wx)+q[y1*lw+x1]*wx)*wy,1e-4),
+    bL=Math.pow(bu,2.2),
+    f=(1+CF.kS*S/100*(1-sm(0,CF.s1,bu)))*(1+CF.kH*Hh/100*sm(CF.h0,1,bu));
+    let Yn=bL*f*Math.pow(Y/bL,dx);
+    Yn*=1+CF.kP*Hh/100*sm(CF.p0,1.3,Math.pow(Math.max(Yn,1e-6),1/2.2));
+    const k=Yn/Y;lr*=k;lg*=k;lb*=k;}
+   let r=encF(lr),gg=encF(lg),bl=encF(lb);
+   if(tone){
+    const L=.2126*r+.7152*gg+.0722*bl,f=Math.min(254,Math.floor(L)),L2=T[f]+(T[f+1]-T[f])*(L-f),
+    wt=sm(6,30,L),k=L2/Math.max(L,1),dl=L2-L;
+    /* 極暗處用「加法」避免放大色噪，其餘用「比例」保留飽和度 */
+    r=(r+dl)*(1-wt)+r*k*wt;gg=(gg+dl)*(1-wt)+gg*k*wt;bl=(bl+dl)*(1-wt)+bl*k*wt;}
+   if(col){r=cl(r,0,255);gg=cl(gg,0,255);bl=cl(bl,0,255);
+    const yy=.2126*r+.7152*gg+.0722*bl,mx=Math.max(r,gg,bl),mn=Math.min(r,gg,bl),s=mx?(mx-mn)/mx:0,
+    a=Math.max(0,1+(sat*CF.kSat+vib*(1-s)*CF.kV)*sm(8,60,yy));
+    r=yy+(r-yy)*a;gg=yy+(gg-yy)*a;bl=yy+(bl-yy)*a}
+   r=cl(r,0,255);gg=cl(gg,0,255);bl=cl(bl,0,255);
+   {const y2=.2126*r+.7152*gg+.0722*bl,dd=interp1(y2,POST.cen,POST.d),g2=interp1(y2,POST.cen,POST.g);
+    r=cl(y2+dd+(r-y2)*g2,0,255);gg=cl(y2+dd+(gg-y2)*g2,0,255);bl=cl(y2+dd+(bl-y2)*g2,0,255);}
+   d[i]=r;d[i+1]=gg;d[i+2]=bl;}}
+}
+
+/* ---------- 讀圖 ---------- */
+const drawTo=(bmp,max)=>{const s=max?Math.min(1,max/Math.max(bmp.width,bmp.height)):1,c=document.createElement('canvas');
+ c.width=Math.max(1,Math.round(bmp.width*s));c.height=Math.max(1,Math.round(bmp.height*s));c.getContext('2d',{willReadFrequently:true}).drawImage(bmp,0,0,c.width,c.height);return c};
+async function add(files){
+ $('#msg').textContent='分析中…';
+ for(const f of files){
+  if(!f.type.startsWith('image/'))continue;
+  try{const bmp=await createImageBitmap(f),a=drawTo(bmp,320),t=drawTo(bmp,160);bmp.close();
+   const auto=analyze(a.getContext('2d').getImageData(0,0,a.width,a.height));
+   items.push({f,auto,p:scaled(auto),url:t.toDataURL('image/jpeg',.7)});}
+  catch(e){console.warn(f.name,e)}
+ }
+ $('#msg').textContent='';renderList();if(sel<0&&items.length)pick(0);
+}
+function renderList(){
+ $('#list').innerHTML='';
+ items.forEach((it,i)=>{const im=new Image();im.src=it.url;im.className='th'+(i==sel?' s':'');im.title=it.f.name;im.onclick=()=>pick(i);$('#list').append(im)});
+ $('#go').disabled=!items.length;
+}
+async function pick(i){
+ sel=i;renderList();const it=items[i];
+ const bmp=await createImageBitmap(it.f),c=drawTo(bmp,1400);bmp.close();
+ if(sel!=i)return;
+ pv={w:c.width,h:c.height,base:c.getContext('2d').getImageData(0,0,c.width,c.height)};
+ $('#cv').width=pv.w;$('#cv').height=pv.h;$('#hold').hidden=false;
+ buildSliders();draw();$('#one').disabled=false;$('#redo').disabled=false;
+}
+let raf=0;function draw(orig){
+ cancelAnimationFrame(raf);raf=requestAnimationFrame(()=>{if(!pv)return;
+  const im=new ImageData(new Uint8ClampedArray(pv.base.data),pv.w,pv.h);
+  if(!orig)adjust(im,items[sel].p);$('#cv').getContext('2d').putImageData(im,0,0)});
+}
+function buildSliders(){
+ const it=items[sel];$('#sl').innerHTML='';
+ K.forEach(([k,n,lo,hi,st])=>{const r=document.createElement('div');r.className='row';
+  r.innerHTML=`<span>${n}</span><input type="range" min="${lo}" max="${hi}" step="${st}" value="${it.p[k]}"><output>${it.p[k]}</output>`;
+  const inp=r.children[1],o=r.children[2];
+  inp.oninput=()=>{it.p[k]=+inp.value;o.textContent=inp.value;draw()};
+  $('#sl').append(r)});
+}
+
+/* ---------- 輸出 ---------- */
+const crcT=Uint32Array.from({length:256},(_,n)=>{let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;return c>>>0});
+const crc=u=>{let c=~0;for(let i=0;i<u.length;i++)c=crcT[(c^u[i])&255]^(c>>>8);return~c>>>0};
+function zip(fs){
+ const te=new TextEncoder(),parts=[],cen=[];let off=0;
+ for(const f of fs){const nm=te.encode(f.name),c=crc(f.data),h=new DataView(new ArrayBuffer(30));
+  h.setUint32(0,0x04034b50,true);h.setUint16(4,20,true);h.setUint16(6,0x800,true);h.setUint32(14,c,true);
+  h.setUint32(18,f.data.length,true);h.setUint32(22,f.data.length,true);h.setUint16(26,nm.length,true);
+  parts.push(h,nm,f.data);
+  const e=new DataView(new ArrayBuffer(46));e.setUint32(0,0x02014b50,true);e.setUint16(4,20,true);e.setUint16(6,20,true);e.setUint16(8,0x800,true);
+  e.setUint32(16,c,true);e.setUint32(20,f.data.length,true);e.setUint32(24,f.data.length,true);e.setUint16(28,nm.length,true);e.setUint32(42,off,true);
+  cen.push(e,nm);off+=30+nm.length+f.data.length}
+ const cs=cen.reduce((a,b)=>a+(b.byteLength),0),end=new DataView(new ArrayBuffer(22));
+ end.setUint32(0,0x06054b50,true);end.setUint16(8,fs.length,true);end.setUint16(10,fs.length,true);end.setUint32(12,cs,true);end.setUint32(16,off,true);
+ return new Blob([...parts,...cen,end],{type:'application/zip'});
+}
+const dl=(blob,name)=>{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),4000)};
+async function render(it){
+ const fmt=$('#fmt').value,bmp=await createImageBitmap(it.f),c=drawTo(bmp,+$('#mx').value||0);bmp.close();
+ const x=c.getContext('2d'),im=x.getImageData(0,0,c.width,c.height);adjust(im,it.p);x.putImageData(im,0,0);
+ const blob=await new Promise(r=>c.toBlob(r,fmt,+$('#q').value/100));
+ const ext={'image/jpeg':'jpg','image/webp':'webp','image/png':'png'}[fmt];
+ return{name:it.f.name.replace(/\.[^.]+$/,'')+'_auto.'+ext,blob};
+}
+async function run(list){
+ $('#go').disabled=$('#one').disabled=true;$('#bar').style.display='block';const out=[],used=new Set();
+ for(let i=0;i<list.length;i++){
+  $('#msg').textContent=`處理中 ${i+1}/${list.length}`;$('#bar i').style.width=(i/list.length*100)+'%';
+  try{const r=await render(list[i]);let n=r.name,j=1;while(used.has(n))n=r.name.replace(/(\.\w+)$/,`_${j++}$1`);used.add(n);
+   out.push({name:n,blob:r.blob,data:list.length>1?new Uint8Array(await r.blob.arrayBuffer()):null})}
+  catch(e){console.warn(e)}
+ }
+ $('#bar i').style.width='100%';
+ if(out.length==1)dl(out[0].blob,out[0].name);else if(out.length)dl(zip(out),'auto_tone_'+Date.now()+'.zip');
+ $('#msg').textContent=`完成，共 ${out.length} 張`;setTimeout(()=>$('#bar').style.display='none',1500);
+ $('#go').disabled=false;$('#one').disabled=sel<0;
+}
+
+/* ---------- 事件 ---------- */
+K.forEach(([k,n])=>{const c=document.createElement('span');c.className='chip on';c.textContent=n;
+ c.onclick=()=>{en[k]=!en[k];c.classList.toggle('on',en[k]);draw()};$('#chips').append(c)});
+$('#str').oninput=e=>{strength=e.target.value/100;$('#strv').textContent=e.target.value+'%';
+ items.forEach(it=>it.p=scaled(it.auto));if(sel>=0){buildSliders();draw()}};
+$('#redo').onclick=()=>{const it=items[sel];it.p=scaled(it.auto);buildSliders();draw()};
+$('#q').oninput=e=>$('#qv').textContent=e.target.value;
+$('#fmt').onchange=e=>$('#q').disabled=e.target.value=='image/png';
+$('#go').onclick=()=>run(items);$('#one').onclick=()=>run([items[sel]]);
+$('#clr').onclick=()=>{items=[];sel=-1;pv=null;$('#sl').innerHTML='<small>尚未選擇照片</small>';$('#hold').hidden=true;
+ $('#cv').width=$('#cv').height=1;renderList();$('#one').disabled=$('#redo').disabled=true};
+const h=$('#hold');['pointerdown'].forEach(ev=>h.addEventListener(ev,()=>draw(true)));
+['pointerup','pointerleave','pointercancel'].forEach(ev=>h.addEventListener(ev,()=>draw()));
+const dr=$('#drop');dr.onclick=()=>$('#file').click();
+$('#file').onchange=e=>{add([...e.target.files]);e.target.value=''};
+['dragover','dragenter'].forEach(ev=>dr.addEventListener(ev,e=>{e.preventDefault();dr.classList.add('on')}));
+['dragleave','drop'].forEach(ev=>dr.addEventListener(ev,e=>{e.preventDefault();dr.classList.remove('on')}));
+dr.addEventListener('drop',e=>add([...e.dataTransfer.files]));
+if('serviceWorker' in navigator&&location.protocol.startsWith('http'))
+ navigator.serviceWorker.register('./sw.js').catch(e=>console.error('Service worker registration failed:',e));
+</script></body></html>

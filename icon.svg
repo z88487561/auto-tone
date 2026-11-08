@@ -1,0 +1,105 @@
+<svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full rounded-[22.5%] shadow-2xl">
+            <defs>
+              <!-- Background Gradient -->
+              <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#0f172a"/>
+                <stop offset="50%" stop-color="#1e1b4b"/>
+                <stop offset="100%" stop-color="#020617"/>
+              </linearGradient>
+
+              <!-- Tone Adjustment Wheel Multi-stop Gradient -->
+              <linearGradient id="colorWheelGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#ff455b"/>
+                <stop offset="25%" stop-color="#8b5cf6"/>
+                <stop offset="50%" stop-color="#3b82f6"/>
+                <stop offset="75%" stop-color="#10b981"/>
+                <stop offset="100%" stop-color="#f59e0b"/>
+              </linearGradient>
+
+              <!-- Dynamic Magic Glow Gradient -->
+              <linearGradient id="wandGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#fbbf24"/>
+                <stop offset="100%" stop-color="#f59e0b"/>
+              </linearGradient>
+
+              <!-- Tone Curve Gradient -->
+              <linearGradient id="curveGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#ec4899"/>
+                <stop offset="50%" stop-color="#8b5cf6"/>
+                <stop offset="100%" stop-color="#06b6d4"/>
+              </linearGradient>
+
+              <!-- Subtle Outer Ring Glow -->
+              <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+                <feGaussianBlur stdDeviation="12" result="blur"/>
+                <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+              </filter>
+              
+              <!-- Sparkle Glow -->
+              <filter id="sparkleGlow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="6" result="blur"/>
+                <feComponentTransfer in="blur">
+                  <feFuncA type="linear" slope="1.5"/>
+                </feComponentTransfer>
+                <feMerge>
+                  <feMergeNode/>
+                  <feMergeNode in="SourceGraphic"/>
+                </feMerge>
+              </filter>
+            </defs>
+
+            <!-- App Base Background (Rounded Squircle shape) -->
+            <rect width="512" height="512" rx="115" fill="url(#bgGradient)"/>
+            
+            <!-- Subtle Outer Accent Ring -->
+            <rect x="8" y="8" width="496" height="496" rx="107" fill="none" stroke="white" stroke-opacity="0.08" stroke-width="3"/>
+
+            <!-- Central Tone Adjustment Arc / Aperture Ring -->
+            <g transform="translate(256, 256)">
+              <!-- Background Track Ring -->
+              <circle cx="0" cy="0" r="140" fill="none" stroke="#334155" stroke-width="16" stroke-dasharray="660 220" stroke-linecap="round" transform="rotate(-120)"/>
+              
+              <!-- Vibrant Chroma Sweep Arc -->
+              <circle cx="0" cy="0" r="140" fill="none" stroke="url(#colorWheelGrad)" stroke-width="18" stroke-dasharray="540 340" stroke-linecap="round" transform="rotate(-60)" filter="url(#glow)"/>
+
+              <!-- Tone Adjustment Histogram Bar Graph Overlay (Dynamic Peaks) -->
+              <g transform="translate(-100, 30)" opacity="0.35">
+                <rect x="0" y="-30" width="12" height="30" rx="6" fill="#38bdf8"/>
+                <rect x="22" y="-60" width="12" height="60" rx="6" fill="#818cf8"/>
+                <rect x="44" y="-90" width="12" height="90" rx="6" fill="#c084fc"/>
+                <rect x="66" y="-120" width="12" height="120" rx="6" fill="#f472b6"/>
+                <rect x="88" y="-75" width="12" height="75" rx="6" fill="#fb7185"/>
+                <rect x="110" y="-105" width="12" height="105" rx="6" fill="#facc15"/>
+                <rect x="132" y="-45" width="12" height="45" rx="6" fill="#4ade80"/>
+                <rect x="154" y="-80" width="12" height="80" rx="6" fill="#38bdf8"/>
+                <rect x="176" y="-35" width="12" height="35" rx="6" fill="#818cf8"/>
+              </g>
+
+              <!-- Tone Curve Smooth S-Curve Line -->
+              <path d="M -110 70 C -60 70, -40 -70, 0 -70 C 40 -70, 60 70, 110 -70" fill="none" stroke="url(#curveGrad)" stroke-width="12" stroke-linecap="round"/>
+              
+              <!-- Control Points on Curve -->
+              <circle cx="-50" cy="20" r="8" fill="#ffffff" shadow="0 0 10px white"/>
+              <circle cx="0" cy="-70" r="9" fill="#ffffff"/>
+              <circle cx="50" cy="-20" r="8" fill="#ffffff"/>
+
+              <!-- Auto-Tone Magic Wand / Sparkle Icon Component -->
+              <g transform="translate(45, -55) rotate(-15)" filter="url(#sparkleGlow)">
+                <!-- Wand Handle -->
+                <rect x="-6" y="20" width="12" height="65" rx="6" fill="url(#wandGlow)"/>
+                <path d="M -6 25 L 6 25 L 4 75 L -4 75 Z" fill="#ffffff" opacity="0.3"/>
+                <!-- Magic Wand Star Tip -->
+                <path d="M 0 -22 L 6 -6 L 22 0 L 6 6 L 0 22 L -6 6 L -22 0 L -6 -6 Z" fill="#fbbf24"/>
+                <circle cx="0" cy="0" r="5" fill="#ffffff"/>
+              </g>
+
+              <!-- Extra Auto-Tone Sparkle Accents -->
+              <!-- Top Left Sparkle -->
+              <path d="M -90 -80 L -86 -72 L -78 -68 L -86 -64 L -90 -56 L -94 -64 L -102 -68 L -94 -72 Z" fill="#38bdf8" opacity="0.9" filter="url(#sparkleGlow)"/>
+              <!-- Bottom Left Sparkle -->
+              <path d="M -100 20 L -97 25 L -92 28 L -97 31 L -100 36 L -103 31 L -108 28 L -103 25 Z" fill="#f472b6" opacity="0.8"/>
+              <!-- Small Star Accent -->
+              <circle cx="100" cy="60" r="4" fill="#facc15" opacity="0.9"/>
+              <circle cx="-40" cy="110" r="3" fill="#818cf8" opacity="0.7"/>
+            </g>
+          </svg>

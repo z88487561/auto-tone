@@ -3,6 +3,7 @@
   "short_name": "自動調色",
   "description": "在瀏覽器本機自動調色，不上傳。",
   "lang": "zh-Hant",
+  "id": "./",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

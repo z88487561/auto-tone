@@ -34,6 +34,8 @@ h3{margin:12px 0 4px;font-size:13px;color:var(--mu);font-weight:600}
 select,input[type=number]{background:var(--bg);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:4px}
 #bar{height:6px;background:var(--bd);border-radius:3px;overflow:hidden;margin-top:8px;display:none}#bar i{display:block;height:100%;width:0;background:var(--ac)}
 small{color:var(--mu)}
+.ck{display:flex;gap:8px;align-items:flex-start;margin:12px 0 2px;cursor:pointer}.ck input{margin-top:3px;flex:none}
+#stripn,#szi{display:block;margin-top:2px}
 </style></head><body>
 <header><h1>📷 批次自動調色</h1><button class="g" id="clr">清空</button></header>
 <main>
@@ -52,7 +54,11 @@ small{color:var(--mu)}
  <h3>輸出</h3>
  <div class="row"><span>格式</span><select id="fmt"><option value="image/jpeg">JPEG</option><option value="image/webp">WebP</option><option value="image/png">PNG</option></select><span></span></div>
  <div class="row"><span>品質</span><input id="q" type="range" min="50" max="100" value="92"><output id="qv">92</output></div>
- <div class="row"><span>長邊</span><input id="mx" type="number" min="0" step="100" value="0"><small>px, 0=原尺寸</small></div>
+ <div class="row"><span>尺寸</span><select id="mx"><option value="0">原尺寸</option><option value="4096">長邊 4096 px</option><option value="3840">長邊 3840 px</option><option value="2560">長邊 2560 px</option><option value="2048">長邊 2048 px</option><option value="1920">長邊 1920 px</option><option value="1600">長邊 1600 px</option><option value="1280">長邊 1280 px</option><option value="1024">長邊 1024 px</option><option value="800">長邊 800 px</option><option value="c">自訂…</option></select><span></span></div>
+ <div class="row" id="cuw" hidden><span></span><input id="mxc" type="number" min="16" step="100" value="2000"><small>px</small></div>
+ <small id="szi">依原始比例縮放，不會放大。</small>
+ <label class="ck"><input type="checkbox" id="strip" checked><span>移除 EXIF、GPS 位置與其他中介資料</span></label>
+ <small id="stripn"></small>
  <button id="go" disabled style="width:100%;margin-top:10px">處理全部並下載</button>
  <button class="g" id="one" disabled style="width:100%;margin-top:6px">只下載這張</button>
  <div id="bar"><i></i></div><small id="msg"></small>
@@ -191,9 +197,9 @@ async function add(files){
  $('#msg').textContent='分析中…';
  for(const f of files){
   if(!f.type.startsWith('image/'))continue;
-  try{const bmp=await createImageBitmap(f),a=drawTo(bmp,320),t=drawTo(bmp,160);bmp.close();
+  try{const bmp=await createImageBitmap(f),ow=bmp.width,oh=bmp.height,a=drawTo(bmp,320),t=drawTo(bmp,160);bmp.close();
    const auto=analyze(a.getContext('2d').getImageData(0,0,a.width,a.height));
-   items.push({f,auto,p:scaled(auto),url:t.toDataURL('image/jpeg',.7)});}
+   items.push({f,ow,oh,auto,p:scaled(auto),url:t.toDataURL('image/jpeg',.7)});}
   catch(e){console.warn(f.name,e)}
  }
  $('#msg').textContent='';renderList();if(sel<0&&items.length)pick(0);
@@ -209,7 +215,7 @@ async function pick(i){
  if(sel!=i)return;
  pv={w:c.width,h:c.height,base:c.getContext('2d').getImageData(0,0,c.width,c.height)};
  $('#cv').width=pv.w;$('#cv').height=pv.h;$('#hold').hidden=false;
- buildSliders();draw();$('#one').disabled=false;$('#redo').disabled=false;
+ buildSliders();draw();updInfo();$('#one').disabled=false;$('#redo').disabled=false;
 }
 let raf=0;function draw(orig){
  cancelAnimationFrame(raf);raf=requestAnimationFrame(()=>{if(!pv)return;
@@ -224,6 +230,101 @@ function buildSliders(){
   inp.oninput=()=>{it.p[k]=+inp.value;o.textContent=inp.value;draw()};
   $('#sl').append(r)});
 }
+
+/* ---------- 中介資料（EXIF / XMP / IPTC） ----------
+   Canvas 重新編碼後一定是「乾淨」的檔案；要保留時，從原檔讀出中介資料再寫回輸出檔。
+   輸出像素已套用方向並轉成 sRGB，所以寫回前會把 Orientation 重設為 1、更新像素尺寸、捨棄舊縮圖；ICC 不保留。 */
+const TE=new TextEncoder(),rd16=(b,o)=>b[o]<<8|b[o+1],rd32=(b,o)=>b[o]*16777216+(b[o+1]<<16|b[o+2]<<8|b[o+3]),rl32=(b,o)=>b[o]|b[o+1]<<8|b[o+2]<<16|b[o+3]*16777216,
+ asc=(b,o,n)=>String.fromCharCode(...b.subarray(o,o+n)),
+ cat=a=>{const o=new Uint8Array(a.reduce((s,x)=>s+x.length,0));let p=0;for(const x of a){o.set(x,p);p+=x.length}return o},
+ be32=n=>Uint8Array.of(n>>>24,n>>>16&255,n>>>8&255,n&255),le32=n=>Uint8Array.of(n&255,n>>>8&255,n>>>16&255,n>>>24&255),
+ noHdr=t=>t.length>6&&asc(t,0,6)==='Exif\0\0'?t.subarray(6):t;
+function metaJPEG(b){const m={};let p=2;
+ while(p+4<=b.length&&b[p]===255){const k=b[p+1];if(k===255){p++;continue}if(k===0xDA||k===0xD9)break;
+  if(k===1||(k>=0xD0&&k<=0xD7)){p+=2;continue}
+  const L=rd16(b,p+2),d=b.subarray(p+4,p+2+L);
+  if(k===0xE1){if(asc(d,0,6)==='Exif\0\0'){if(!m.exif)m.exif=d.subarray(6)}else if(asc(d,0,29)==='http://ns.adobe.com/xap/1.0/\0'){if(!m.xmp)m.xmp=d.subarray(29)}}
+  else if(k===0xED&&asc(d,0,14)==='Photoshop 3.0\0'&&!m.iptc)m.iptc=d;
+  p+=2+L}
+ return m}
+function metaPNG(b){const m={};let p=8;
+ while(p+12<=b.length){const L=rd32(b,p),t=asc(b,p+4,4),d=b.subarray(p+8,p+8+L);
+  if(t==='eXIf')m.exif=noHdr(d);
+  else if(t==='iTXt'){const z=d.indexOf(0);
+   if(z>0&&asc(d,0,z)==='XML:com.adobe.xmp'&&d[z+1]===0){let q=d.indexOf(0,z+3);if(q>0)q=d.indexOf(0,q+1);if(q>0)m.xmp=d.subarray(q+1)}}
+  else if(t==='IEND')break;
+  p+=12+L}
+ return m}
+function metaWEBP(b){const m={};let p=12;
+ while(p+8<=b.length){const t=asc(b,p,4),L=rl32(b,p+4),d=b.subarray(p+8,p+8+L);
+  if(t==='EXIF')m.exif=noHdr(d);else if(t==='XMP ')m.xmp=d;
+  p+=8+L+(L&1)}
+ return m}
+async function readMeta(f){
+ const b=new Uint8Array(await f.arrayBuffer());
+ try{
+  if(b[0]===0xFF&&b[1]===0xD8)return metaJPEG(b);
+  if(b[0]===0x89&&asc(b,1,3)==='PNG')return metaPNG(b);
+  if(asc(b,0,4)==='RIFF'&&asc(b,8,4)==='WEBP')return metaWEBP(b);
+ }catch(e){console.warn(e);return{}}
+ return{unsup:true};
+}
+function fixExif(src,w,h){
+ const t=new Uint8Array(src),le=t[0]===0x49;
+ if(t.length<8||!(le||t[0]===0x4D))return null;
+ const g16=o=>le?t[o]|t[o+1]<<8:t[o]<<8|t[o+1],
+  g32=o=>le?rl32(t,o):rd32(t,o),
+  s16=(o,v)=>{if(le){t[o]=v&255;t[o+1]=v>>8&255}else{t[o]=v>>8&255;t[o+1]=v&255}},
+  s32=(o,v)=>{const q=le?[v&255,v>>>8&255,v>>>16&255,v>>>24&255]:[v>>>24&255,v>>>16&255,v>>>8&255,v&255];t.set(q,o)},
+  dim=(e,ty,v)=>{if(ty===3)s16(e+8,v);else if(ty===4)s32(e+8,v)};
+ if(g16(2)!==42)return null;
+ const ifd=(off,top)=>{
+  const n=g16(off);if(off<8||off+6+n*12>t.length)throw 0;let ptr=0;
+  for(let i=0;i<n;i++){const e=off+2+i*12,tag=g16(e),ty=g16(e+2);
+   if(top&&tag===0x112)s16(e+8,1);
+   else if(top&&tag===0x8769)ptr=g32(e+8);
+   else if(tag===0x100||tag===0xA002)dim(e,ty,w);
+   else if(tag===0x101||tag===0xA003)dim(e,ty,h)}
+  if(top)s32(off+2+n*12,0);
+  return ptr};
+ try{const ptr=ifd(g32(4),true);if(ptr)ifd(ptr,false);return t}catch(e){return null}
+}
+const fixXmp=x=>TE.encode(new TextDecoder().decode(x).replace(/(tiff:Orientation\s*=\s*["'])\d+/g,'$11').replace(/(<tiff:Orientation>)\d+/g,'$11'));
+const seg=(mk,pl)=>{if(pl.length>65533)return null;const s=new Uint8Array(pl.length+4);s[0]=255;s[1]=mk;s[2]=(pl.length+2)>>8;s[3]=(pl.length+2)&255;s.set(pl,4);return s};
+function injJPEG(b,ex,xm,ip){
+ let p=2;while(p+4<=b.length&&b[p]===255&&b[p+1]===0xE0)p+=2+rd16(b,p+2);
+ const add=[ex&&seg(0xE1,cat([TE.encode('Exif\0\0'),ex])),xm&&seg(0xE1,cat([TE.encode('http://ns.adobe.com/xap/1.0/\0'),xm])),ip&&seg(0xED,ip)].filter(Boolean);
+ return cat([b.subarray(0,p),...add,b.subarray(p)]);
+}
+const pch=(t,d)=>{const o=new Uint8Array(12+d.length);o.set(be32(d.length),0);o.set(TE.encode(t),4);o.set(d,8);o.set(be32(crc(o.subarray(4,8+d.length))),8+d.length);return o};
+function injPNG(b,ex,xm){
+ const p=8+12+rd32(b,8),add=[ex&&pch('eXIf',ex),xm&&pch('iTXt',cat([TE.encode('XML:com.adobe.xmp\0\0\0\0\0'),xm]))].filter(Boolean);
+ return cat([b.subarray(0,p),...add,b.subarray(p)]);
+}
+function injWEBP(b,ex,xm,w,h){
+ const wc=(t,d)=>cat([TE.encode(t),le32(d.length),d,new Uint8Array(d.length&1)]),flags=(ex?8:0)|(xm?4:0);
+ let body=b.subarray(12);
+ if(asc(body,0,4)==='VP8X'){body=body.slice();body[8]|=flags}
+ else{const v=new Uint8Array(10);v[0]=flags;
+  v[4]=(w-1)&255;v[5]=(w-1)>>8&255;v[6]=(w-1)>>16&255;v[7]=(h-1)&255;v[8]=(h-1)>>8&255;v[9]=(h-1)>>16&255;
+  body=cat([wc('VP8X',v),body])}
+ body=cat([body,...[ex&&wc('EXIF',ex),xm&&wc('XMP ',xm)].filter(Boolean)]);
+ return cat([TE.encode('RIFF'),le32(body.length+4),TE.encode('WEBP'),body]);
+}
+async function withMeta(blob,m,w,h){
+ const ex=m.exif&&fixExif(m.exif,w,h),xm=m.xmp&&fixXmp(m.xmp),ip=m.iptc;
+ if(!ex&&!xm&&!ip)return null;
+ const b=new Uint8Array(await blob.arrayBuffer()),ty=blob.type;
+ const out=ty==='image/jpeg'?injJPEG(b,ex,xm,ip):ty==='image/png'?injPNG(b,ex,xm):ty==='image/webp'?injWEBP(b,ex,xm,w,h):null;
+ return out&&new Blob([out],{type:ty});
+}
+const getMax=()=>{const v=$('#mx').value;return v=='c'?Math.max(0,+$('#mxc').value||0):+v};
+function updInfo(){
+ const it=items[sel];if(!it){$('#szi').textContent='依原始比例縮放，不會放大。';return}
+ const mx=getMax(),s=mx?Math.min(1,mx/Math.max(it.ow,it.oh)):1;
+ $('#szi').textContent=`這張：${it.ow}×${it.oh} → ${Math.max(1,Math.round(it.ow*s))}×${Math.max(1,Math.round(it.oh*s))} px（依原始比例，不會放大）`;
+}
+function updStrip(){$('#stripn').textContent=$('#strip').checked?'輸出檔不含任何拍攝資訊或位置。':'⚠ 會保留原圖的 EXIF、XMP、IPTC（可能含 GPS 位置），分享前請留意。'}
 
 /* ---------- 輸出 ---------- */
 const crcT=Uint32Array.from({length:256},(_,n)=>{let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;return c>>>0});
@@ -243,23 +344,24 @@ function zip(fs){
 }
 const dl=(blob,name)=>{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),4000)};
 async function render(it){
- const fmt=$('#fmt').value,bmp=await createImageBitmap(it.f),c=drawTo(bmp,+$('#mx').value||0);bmp.close();
+ const fmt=$('#fmt').value,bmp=await createImageBitmap(it.f),c=drawTo(bmp,getMax());bmp.close();
  const x=c.getContext('2d'),im=x.getImageData(0,0,c.width,c.height);adjust(im,it.p);x.putImageData(im,0,0);
- const blob=await new Promise(r=>c.toBlob(r,fmt,+$('#q').value/100));
+ let blob=await new Promise(r=>c.toBlob(r,fmt,+$('#q').value/100)),lost=false;
+ if(!$('#strip').checked){const m=await readMeta(it.f),nb=m.unsup?null:await withMeta(blob,m,c.width,c.height);if(nb)blob=nb;else lost=true}
  const ext={'image/jpeg':'jpg','image/webp':'webp','image/png':'png'}[fmt];
- return{name:it.f.name.replace(/\.[^.]+$/,'')+'_auto.'+ext,blob};
+ return{name:it.f.name.replace(/\.[^.]+$/,'')+'_auto.'+ext,blob,lost};
 }
 async function run(list){
- $('#go').disabled=$('#one').disabled=true;$('#bar').style.display='block';const out=[],used=new Set();
+ $('#go').disabled=$('#one').disabled=true;$('#bar').style.display='block';const out=[],used=new Set();let nl=0;
  for(let i=0;i<list.length;i++){
   $('#msg').textContent=`處理中 ${i+1}/${list.length}`;$('#bar i').style.width=(i/list.length*100)+'%';
-  try{const r=await render(list[i]);let n=r.name,j=1;while(used.has(n))n=r.name.replace(/(\.\w+)$/,`_${j++}$1`);used.add(n);
+  try{const r=await render(list[i]);if(r.lost)nl++;let n=r.name,j=1;while(used.has(n))n=r.name.replace(/(\.\w+)$/,`_${j++}$1`);used.add(n);
    out.push({name:n,blob:r.blob,data:list.length>1?new Uint8Array(await r.blob.arrayBuffer()):null})}
   catch(e){console.warn(e)}
  }
  $('#bar i').style.width='100%';
  if(out.length==1)dl(out[0].blob,out[0].name);else if(out.length)dl(zip(out),'auto_tone_'+Date.now()+'.zip');
- $('#msg').textContent=`完成，共 ${out.length} 張`;setTimeout(()=>$('#bar').style.display='none',1500);
+ $('#msg').textContent=`完成，共 ${out.length} 張`+(nl?`；其中 ${nl} 張原檔沒有可保留的中介資料（或格式不支援）`:'');setTimeout(()=>$('#bar').style.display='none',1500);
  $('#go').disabled=false;$('#one').disabled=sel<0;
 }
 
@@ -270,10 +372,12 @@ $('#str').oninput=e=>{strength=e.target.value/100;$('#strv').textContent=e.targe
  items.forEach(it=>it.p=scaled(it.auto));if(sel>=0){buildSliders();draw()}};
 $('#redo').onclick=()=>{const it=items[sel];it.p=scaled(it.auto);buildSliders();draw()};
 $('#q').oninput=e=>$('#qv').textContent=e.target.value;
+$('#mx').onchange=e=>{$('#cuw').hidden=e.target.value!='c';updInfo()};$('#mxc').oninput=updInfo;
+$('#strip').onchange=updStrip;updStrip();
 $('#fmt').onchange=e=>$('#q').disabled=e.target.value=='image/png';
 $('#go').onclick=()=>run(items);$('#one').onclick=()=>run([items[sel]]);
 $('#clr').onclick=()=>{items=[];sel=-1;pv=null;$('#sl').innerHTML='<small>尚未選擇照片</small>';$('#hold').hidden=true;
- $('#cv').width=$('#cv').height=1;renderList();$('#one').disabled=$('#redo').disabled=true};
+ $('#cv').width=$('#cv').height=1;renderList();updInfo();$('#one').disabled=$('#redo').disabled=true};
 const h=$('#hold');['pointerdown'].forEach(ev=>h.addEventListener(ev,()=>draw(true)));
 ['pointerup','pointerleave','pointercancel'].forEach(ev=>h.addEventListener(ev,()=>draw()));
 const dr=$('#drop');dr.onclick=()=>$('#file').click();

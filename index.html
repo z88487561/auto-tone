@@ -18,9 +18,9 @@ button,.btn{background:var(--ac);color:#fff;border:0;border-radius:8px;padding:8
 button.g{background:transparent;color:var(--tx);border:1px solid var(--bd)}button:disabled{opacity:.4}
 #drop{border:2px dashed var(--bd);border-radius:12px;padding:22px;text-align:center;color:var(--mu);cursor:pointer}
 #drop.on{border-color:var(--ac);color:var(--ac)}
-#stage{position:relative;margin-top:12px;background:#000;border-radius:10px;min-height:120px;display:flex;justify-content:center;overflow:hidden}
+#stage{position:relative;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;cursor:pointer;margin-top:12px;background:#000;border-radius:10px;min-height:120px;display:flex;justify-content:center;overflow:hidden}
 #cv{max-width:100%;max-height:60vh;display:block}
-#hold{position:absolute;right:8px;bottom:8px;background:#000a;color:#fff;touch-action:none;user-select:none}
+#hold{position:absolute;right:8px;bottom:8px;background:#000a;color:#fff;border-radius:8px;padding:4px 10px;font-size:13px;pointer-events:none;user-select:none}#cv{-webkit-user-drag:none;pointer-events:none}
 #list{display:flex;gap:8px;overflow-x:auto;margin-top:12px;padding-bottom:4px}
 .th{flex:none;width:84px;height:64px;border-radius:8px;border:2px solid transparent;object-fit:cover;cursor:pointer}
 .th.s{border-color:var(--ac)}
@@ -42,7 +42,7 @@ small{color:var(--mu)}
 <section class="pn">
  <div id="drop">點擊或拖曳多張照片到這裡（JPG / PNG / WebP / HEIC 視瀏覽器支援）</div>
  <input id="file" type="file" accept="image/*" multiple hidden>
- <div id="stage"><canvas id="cv" width="1" height="1"></canvas><button id="hold" class="g" hidden>按住看原圖</button></div>
+ <div id="stage"><canvas id="cv" width="1" height="1"></canvas><span id="hold" hidden>按住圖片看原圖</span></div>
  <div id="list"></div>
 </section>
 <aside class="pn">
@@ -217,11 +217,13 @@ async function pick(i){
  $('#cv').width=pv.w;$('#cv').height=pv.h;$('#hold').hidden=false;
  buildSliders();draw();updInfo();$('#one').disabled=false;$('#redo').disabled=false;
 }
-let raf=0;function draw(orig){
- cancelAnimationFrame(raf);raf=requestAnimationFrame(()=>{if(!pv)return;
-  const im=new ImageData(new Uint8ClampedArray(pv.base.data),pv.w,pv.h);
-  if(!orig)adjust(im,items[sel].p);$('#cv').getContext('2d').putImageData(im,0,0)});
-}
+let raf=0;
+function show(orig){if(!pv)return;const ctx=$('#cv').getContext('2d');
+ if(orig){ctx.putImageData(pv.base,0,0);return}
+ if(!pv.out){const im=new ImageData(new Uint8ClampedArray(pv.base.data),pv.w,pv.h);adjust(im,items[sel].p);pv.out=im}
+ ctx.putImageData(pv.out,0,0)}
+function draw(orig){cancelAnimationFrame(raf);if(orig){show(true);return}
+ if(pv)pv.out=null;raf=requestAnimationFrame(()=>show())}
 function buildSliders(){
  const it=items[sel];$('#sl').innerHTML='';
  K.forEach(([k,n,lo,hi,st])=>{const r=document.createElement('div');r.className='row';
@@ -378,8 +380,11 @@ $('#fmt').onchange=e=>$('#q').disabled=e.target.value=='image/png';
 $('#go').onclick=()=>run(items);$('#one').onclick=()=>run([items[sel]]);
 $('#clr').onclick=()=>{items=[];sel=-1;pv=null;$('#sl').innerHTML='<small>尚未選擇照片</small>';$('#hold').hidden=true;
  $('#cv').width=$('#cv').height=1;renderList();updInfo();$('#one').disabled=$('#redo').disabled=true};
-const h=$('#hold');['pointerdown'].forEach(ev=>h.addEventListener(ev,()=>draw(true)));
-['pointerup','pointerleave','pointercancel'].forEach(ev=>h.addEventListener(ev,()=>draw()));
+const stg=$('#stage'),hint=$('#hold');let holding=false;
+function peek(on){if(!pv||holding===on)return;holding=on;cancelAnimationFrame(raf);show(on);hint.textContent=on?'原圖':'按住圖片看原圖'}
+stg.addEventListener('pointerdown',e=>{if(e.button>0||!pv)return;try{stg.setPointerCapture(e.pointerId)}catch(_){}peek(true)});
+['pointerup','pointercancel','lostpointercapture'].forEach(ev=>stg.addEventListener(ev,()=>peek(false)));
+stg.addEventListener('contextmenu',e=>e.preventDefault());
 const dr=$('#drop');dr.onclick=()=>$('#file').click();
 $('#file').onchange=e=>{add([...e.target.files]);e.target.value=''};
 ['dragover','dragenter'].forEach(ev=>dr.addEventListener(ev,e=>{e.preventDefault();dr.classList.add('on')}));
